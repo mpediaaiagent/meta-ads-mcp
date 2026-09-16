@@ -1,0 +1,13 @@
+{
+  "name": "meta-ads-mcp",
+  "version": "0.1.0",
+  "description": "MCP server + API for Meta Ads analytics (UTM, website events, product/revenue data)",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "mcp": "node src/index.js"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
