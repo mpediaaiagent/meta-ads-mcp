@@ -29,7 +29,7 @@ src/
       analyticsService.js            aggregation logic: SQL marketing tables -> response shape
     clients/
       mysqlClient.js                 read-only MySQL pool (trubuddyweb sessions/events)
-      productCatalog.js              reads trubuddyweb's allProducts.json for product names
+      productCatalog.js              reads local allProducts.json for product names
     lib/
       dateRange.js                   validates start_date/end_date, converts IST -> UTC
   mcp/
@@ -41,10 +41,10 @@ src/
 ## Data sources (read-only, never written to)
 
 - **MySQL** (`utms`, `sessions`, `events`, `purchases`) — trubuddyweb's local marketing analytics
-  tables, joined by `session_id`. `TRUBUDDY_DB_*` env vars point at the DB; every pooled connection
+  tables, joined by `session_id`. `DB_*` env vars point at the DB; every pooled connection
   is put into `SET SESSION TRANSACTION READ ONLY` as a safety net.
-- **Product catalog** — read directly from trubuddyweb's `app/Http/assets/json/allProducts.json`
-  (path configured via `TRUBUDDY_PRODUCT_CATALOG_PATH`), not copied into this repo.
+- **Product catalog** — read from this repo's local `src/api/data/allProducts.json` copy. Use
+  `PRODUCT_CATALOG_PATH` only if you need to override that path.
 
 ## 1. Install dependencies
 
@@ -60,8 +60,8 @@ npm install
 cp .env.example .env
 ```
 
-Fill in `TRUBUDDY_DB_*` with real values (ask a teammate — never commit them).
-For local development, `TRUBUDDY_DB_HOST=127.0.0.1` etc. point at a local Laragon MySQL instance
+Fill in `DB_*` with real values (ask a teammate — never commit them).
+For local development, `DB_HOST=127.0.0.1` etc. point at a local Laragon MySQL instance
 that must be running (see trubuddyweb's own `.env` for the local dev DB name/credentials).
 
 ## 3. Run the API
@@ -126,7 +126,7 @@ Field sources:
 - `add_to_carts` = distinct `events.session_id` where `event_type = 'add_to_cart'`
 - `orders`/`total_revenue` = `purchases.order_id` and `purchases.total_amount`
 - `items` = parsed from `purchases.orderData.cartDetails`, with fallback to `purchases.cart`
-- `product_name` = product ID lookup in `app/Http/assets/json/allProducts.json`
+- `product_name` = product ID lookup in `src/api/data/allProducts.json`
 
 Missing/invalid dates, or `end_date` before `start_date`, return a `400` with a JSON error:
 

@@ -107,25 +107,88 @@ function ensureDailyData(campaign, date) {
 
 function addMetricRows(campaignsByKey, rows, metricName) {
   for (const row of rows) {
-    const campaign = ensureCampaign(campaignsByKey, row);
-    const dailyData = ensureDailyData(campaign, row.date);
+    const campaign = campaignsByKey.get(campaignKey(row));
+    if (!campaign) continue;
+
+    const dailyData = campaign.dailyDataByDate.get(row.date);
+    if (!dailyData) continue;
+
     dailyData[metricName] = Number(row[metricName]) || 0;
   }
+}
+
+function effectiveUtmSelect(eventTimeColumn) {
+  return `
+       COALESCE(
+         NULLIF(u.utm_campaign, ''),
+         (
+           SELECT NULLIF(u2.utm_campaign, '')
+           FROM utms u2
+           WHERE u2.visitor_id = s.visitor_id
+             AND (NULLIF(u2.utm_campaign, '') IS NOT NULL
+               OR NULLIF(u2.utm_content, '') IS NOT NULL
+               OR NULLIF(u2.utm_term, '') IS NOT NULL)
+             AND u2.created_at <= ${eventTimeColumn}
+           ORDER BY u2.created_at DESC, u2.id DESC
+           LIMIT 1
+         )
+       ) AS utm_campaign,
+       COALESCE(
+         NULLIF(u.utm_content, ''),
+         (
+           SELECT NULLIF(u2.utm_content, '')
+           FROM utms u2
+           WHERE u2.visitor_id = s.visitor_id
+             AND (NULLIF(u2.utm_campaign, '') IS NOT NULL
+               OR NULLIF(u2.utm_content, '') IS NOT NULL
+               OR NULLIF(u2.utm_term, '') IS NOT NULL)
+             AND u2.created_at <= ${eventTimeColumn}
+           ORDER BY u2.created_at DESC, u2.id DESC
+           LIMIT 1
+         )
+       ) AS utm_adset,
+       COALESCE(
+         NULLIF(u.utm_term, ''),
+         (
+           SELECT NULLIF(u2.utm_term, '')
+           FROM utms u2
+           WHERE u2.visitor_id = s.visitor_id
+             AND (NULLIF(u2.utm_campaign, '') IS NOT NULL
+               OR NULLIF(u2.utm_content, '') IS NOT NULL
+               OR NULLIF(u2.utm_term, '') IS NOT NULL)
+             AND u2.created_at <= ${eventTimeColumn}
+           ORDER BY u2.created_at DESC, u2.id DESC
+           LIMIT 1
+         )
+       ) AS utm_ad`;
 }
 
 async function getSessionMetrics(range) {
   return queryTrubuddyDb(
     `SELECT
-       u.utm_campaign,
-       u.utm_content AS utm_adset,
-       u.utm_term AS utm_ad,
-       DATE_FORMAT(DATE_ADD(s.started_at, INTERVAL 330 MINUTE), '%d/%m/%y') AS date,
-       COUNT(DISTINCT s.session_id) AS page_visits,
-       COUNT(DISTINCT CASE WHEN s.engaged_seconds > 10 THEN s.session_id END) AS engaged_sessions
-     FROM sessions s
-     INNER JOIN utms u ON u.session_id = s.session_id
-     WHERE s.started_at >= ? AND s.started_at < ?
-     GROUP BY u.utm_campaign, u.utm_content, u.utm_term, date`,
+       attributed_sessions.utm_campaign,
+       attributed_sessions.utm_adset,
+       attributed_sessions.utm_ad,
+       attributed_sessions.date,
+       COUNT(DISTINCT attributed_sessions.session_id) AS page_visits,
+       COUNT(DISTINCT CASE
+         WHEN attributed_sessions.engaged_seconds > 10 THEN attributed_sessions.session_id
+       END) AS engaged_sessions
+     FROM (
+       SELECT
+         s.session_id,
+         s.engaged_seconds,
+         ${effectiveUtmSelect("s.started_at")},
+         DATE_FORMAT(DATE_ADD(s.started_at, INTERVAL 330 MINUTE), '%d/%m/%y') AS date
+       FROM sessions s
+       LEFT JOIN utms u ON u.session_id = s.session_id
+       WHERE s.started_at >= ? AND s.started_at < ?
+     ) attributed_sessions
+     GROUP BY
+       attributed_sessions.utm_campaign,
+       attributed_sessions.utm_adset,
+       attributed_sessions.utm_ad,
+       attributed_sessions.date`,
     [toMysqlDatetime(range.startUtc), toMysqlDatetime(range.endUtcExclusive)]
   );
 }
@@ -133,17 +196,28 @@ async function getSessionMetrics(range) {
 async function getAddToCartMetrics(range) {
   return queryTrubuddyDb(
     `SELECT
-       u.utm_campaign,
-       u.utm_content AS utm_adset,
-       u.utm_term AS utm_ad,
-       DATE_FORMAT(DATE_ADD(e.created_at, INTERVAL 330 MINUTE), '%d/%m/%y') AS date,
-       COUNT(DISTINCT e.session_id) AS add_to_carts
-     FROM events e
-     INNER JOIN utms u ON u.session_id = e.session_id
-     WHERE e.event_type = 'add_to_cart'
-       AND e.created_at >= ?
-       AND e.created_at < ?
-     GROUP BY u.utm_campaign, u.utm_content, u.utm_term, date`,
+       attributed_events.utm_campaign,
+       attributed_events.utm_adset,
+       attributed_events.utm_ad,
+       attributed_events.date,
+       COUNT(DISTINCT attributed_events.session_id) AS add_to_carts
+     FROM (
+       SELECT
+         e.session_id,
+         ${effectiveUtmSelect("e.created_at")},
+         DATE_FORMAT(DATE_ADD(e.created_at, INTERVAL 330 MINUTE), '%d/%m/%y') AS date
+       FROM events e
+       INNER JOIN sessions s ON s.session_id = e.session_id
+       LEFT JOIN utms u ON u.session_id = e.session_id
+       WHERE e.event_type = 'add_to_cart'
+         AND e.created_at >= ?
+         AND e.created_at < ?
+     ) attributed_events
+     GROUP BY
+       attributed_events.utm_campaign,
+       attributed_events.utm_adset,
+       attributed_events.utm_ad,
+       attributed_events.date`,
     [toMysqlDatetime(range.startUtc), toMysqlDatetime(range.endUtcExclusive)]
   );
 }
@@ -151,16 +225,15 @@ async function getAddToCartMetrics(range) {
 async function getPurchaseRows(range) {
   return queryTrubuddyDb(
     `SELECT
-       u.utm_campaign,
-       u.utm_content AS utm_adset,
-       u.utm_term AS utm_ad,
+       ${effectiveUtmSelect("p.purchased_at")},
        DATE_FORMAT(DATE_ADD(p.purchased_at, INTERVAL 330 MINUTE), '%d/%m/%y') AS date,
        p.order_id,
        p.total_amount,
        p.orderData,
        p.cart
      FROM purchases p
-     INNER JOIN utms u ON u.session_id = p.session_id
+     LEFT JOIN sessions s ON s.session_id = p.session_id
+     LEFT JOIN utms u ON u.session_id = p.session_id
      WHERE p.purchased_at >= ? AND p.purchased_at < ?
      ORDER BY p.purchased_at ASC, p.id ASC`,
     [toMysqlDatetime(range.startUtc), toMysqlDatetime(range.endUtcExclusive)]
@@ -176,10 +249,6 @@ export async function getMetaAdsWebsiteAnalytics(range) {
 
   const campaignsByKey = new Map();
 
-  addMetricRows(campaignsByKey, sessionRows, "page_visits");
-  addMetricRows(campaignsByKey, sessionRows, "engaged_sessions");
-  addMetricRows(campaignsByKey, addToCartRows, "add_to_carts");
-
   for (const purchase of purchaseRows) {
     const campaign = ensureCampaign(campaignsByKey, purchase);
     const dailyData = ensureDailyData(campaign, purchase.date);
@@ -190,6 +259,10 @@ export async function getMetaAdsWebsiteAnalytics(range) {
       total_revenue: round2(Number(purchase.total_amount) || 0),
     });
   }
+
+  addMetricRows(campaignsByKey, sessionRows, "page_visits");
+  addMetricRows(campaignsByKey, sessionRows, "engaged_sessions");
+  addMetricRows(campaignsByKey, addToCartRows, "add_to_carts");
 
   const campaigns = [...campaignsByKey.values()]
     .map((campaign) => {

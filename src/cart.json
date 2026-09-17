@@ -1,0 +1,78 @@
+{
+  "date_range": {
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-16",
+    "timezone": "Asia/Kolkata"
+  },
+  "utm": [
+    {
+      "utm_campaign": "C1",
+      "utm_adset": "A1C1",
+      "utm_ad": "A1C1A1",
+
+      "session_id": "abc123",
+      "visitor_id": "abc12",
+      "page_visits": 520,
+      "engaged_sessions": 46,
+
+      "orders": 12,
+      "revenue": 36000,
+      "total_quantity": 21,
+
+      "products": [
+        {
+          "product_id": "setOfAllBooks",
+          "product_name": "The Ultimate Guide to Leadership and Self-Development",
+          "quantity_sold": 8,
+          "orders": 8,
+          "revenue": 20792
+        },
+        {
+          "product_id": "set8",
+          "product_name": "An Achiever's Guide to Productivity",
+          "quantity_sold": 5,
+          "orders": 5,
+          "revenue": 2495
+        }
+      ]
+    },
+    {
+      "utm_campaign": "C2",
+      "utm_adset": "A2C2",
+      "utm_ad": "A2C2A2",
+
+      "session_id": "abc1234",
+      "visitor_id": "abc12345",
+      "page_visits": 310,
+      "engaged_sessions": 20,
+
+      "orders": 6,
+      "revenue": 14200,
+      "total_quantity": 9,
+
+      "products": [
+        {
+          "product_id": "set5",
+          "product_name": "The Complete Guide to Mastering Social Skills",
+          "quantity_sold": 4,
+          "orders": 4,
+          "revenue": 1596
+        },
+        {
+          "product_id": "setOfAllBooks",
+          "product_name": "The Ultimate Guide to Leadership and Self-Development",
+          "quantity_sold": 8,
+          "orders": 8,
+          "revenue": 20792
+        },
+        {
+          "product_id": "set8",
+          "product_name": "An Achiever's Guide to Productivity",
+          "quantity_sold": 5,
+          "orders": 5,
+          "revenue": 2495
+        }
+      ]
+    }
+  ]
+}

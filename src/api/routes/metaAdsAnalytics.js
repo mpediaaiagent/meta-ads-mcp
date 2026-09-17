@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { resolveDateRange } from "../lib/dateRange.js";
+import { getTrubuddyProductionAnalytics } from "../clients/trubuddyAnalyticsClient.js";
 import { getMetaAdsWebsiteAnalytics } from "../services/analyticsService.js";
 import { config } from "../../config.js";
 
@@ -18,6 +19,11 @@ metaAdsAnalyticsRouter.get("/", async (req, res) => {
   }
 
   try {
+    const productionAnalytics = await getTrubuddyProductionAnalytics(range);
+    if (productionAnalytics) {
+      return res.status(200).json(productionAnalytics);
+    }
+
     const analytics = await getMetaAdsWebsiteAnalytics(range);
     return res.status(200).json({
       date_range: {
@@ -29,6 +35,10 @@ metaAdsAnalyticsRouter.get("/", async (req, res) => {
     });
   } catch (err) {
     console.error("Failed to build meta-ads analytics:", err);
+    if (err.status && err.body) {
+      return res.status(err.status).json(err.body);
+    }
+
     return res.status(500).json({
       error: "internal_error",
       message: "Failed to build analytics for the requested date range.",

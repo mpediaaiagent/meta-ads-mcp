@@ -5,11 +5,11 @@ import { config } from "../../config.js";
 // transaction mode as soon as it's opened, so a mistake in application code
 // can never write to the TruBuddy website DB.
 const pool = mysql.createPool({
-  host: config.trubuddyDb.host,
-  port: config.trubuddyDb.port,
-  database: config.trubuddyDb.database,
-  user: config.trubuddyDb.user,
-  password: config.trubuddyDb.password,
+  host: config.db.host,
+  port: config.db.port,
+  database: config.db.database,
+  user: config.db.user,
+  password: config.db.password,
   waitForConnections: true,
   connectionLimit: 5,
   dateStrings: false,
