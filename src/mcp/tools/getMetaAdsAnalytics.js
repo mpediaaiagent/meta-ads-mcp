@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { config } from "../../config.js";
+import { requestJson } from "../../lib/httpJson.js";
 
 const TOOL_NAME = "get_meta_ads_analytics";
 
@@ -10,8 +11,8 @@ async function callMetaAdsAnalyticsApi(startDate, endDate) {
   url.searchParams.set("start_date", startDate);
   url.searchParams.set("end_date", endDate);
 
-  const response = await fetch(url);
-  const body = await response.json();
+  const response = await requestJson(url);
+  const body = response.body;
 
   if (!response.ok) {
     throw new Error(body.message || `API request failed with status ${response.status}`);

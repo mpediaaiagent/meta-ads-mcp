@@ -1,15 +1,12 @@
 import { Router } from "express";
 import { resolveDateRange } from "../lib/dateRange.js";
 import { getTrubuddyProductionAnalytics } from "../clients/trubuddyAnalyticsClient.js";
-import { getMetaAdsWebsiteAnalytics } from "../services/analyticsService.js";
-import { config } from "../../config.js";
 
 export const metaAdsAnalyticsRouter = Router();
 
 // GET /api/meta-ads/analytics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 //
-// Returns SQL-only TruBuddy marketing attribution data grouped by
-// campaign/adset/ad and daily purchase date.
+// Thin bridge to the TruBuddy Laravel analytics endpoint.
 metaAdsAnalyticsRouter.get("/", async (req, res) => {
   const { start_date: startDate, end_date: endDate } = req.query;
 
@@ -19,20 +16,8 @@ metaAdsAnalyticsRouter.get("/", async (req, res) => {
   }
 
   try {
-    const productionAnalytics = await getTrubuddyProductionAnalytics(range);
-    if (productionAnalytics) {
-      return res.status(200).json(productionAnalytics);
-    }
-
-    const analytics = await getMetaAdsWebsiteAnalytics(range);
-    return res.status(200).json({
-      date_range: {
-        start_date: range.startDate,
-        end_date: range.endDate,
-        timezone: config.reportingTimezone,
-      },
-      ...analytics,
-    });
+    const analytics = await getTrubuddyProductionAnalytics(range);
+    return res.status(200).json(analytics);
   } catch (err) {
     console.error("Failed to build meta-ads analytics:", err);
     if (err.status && err.body) {

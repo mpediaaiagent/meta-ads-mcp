@@ -6,15 +6,16 @@ A custom MCP server + API for Meta Ads analytics.
 the conversation/explanation layer.
 
 ```
-Claude -> our MCP -> our API -> local TruBuddy SQL marketing tables -> API response -> MCP -> Claude
+Claude -> our MCP -> our API -> TruBuddy Laravel analytics endpoint -> production SQL -> API response -> MCP -> Claude
 ```
 
 This project does not include recommendations, Keep/Pause logic, Audience Catalog, budget/ad
 automation, attribution, or profit calculation (shipping/product cost/payment fees/refunds are not
 subtracted — revenue is gross order value). There is exactly one filter: date range.
 
-This version returns SQL-only TruBuddy marketing attribution data grouped by campaign/adset/ad and
-day. It does not read Athena and does not write to any TruBuddy table.
+This version is a thin Node/MCP bridge. The real analytics calculation lives in the TruBuddy
+Laravel app, because that app already has production SQL access. This repo does not read Athena and
+does not write to any TruBuddy table.
 
 ## Structure
 
@@ -25,11 +26,8 @@ src/
     server.js                        Express API server entry point
     routes/
       metaAdsAnalytics.js            GET /api/meta-ads/analytics handler + validation
-    services/
-      analyticsService.js            aggregation logic: SQL marketing tables -> response shape
     clients/
-      mysqlClient.js                 read-only MySQL pool (trubuddyweb sessions/events)
-      productCatalog.js              reads local allProducts.json for product names
+      trubuddyAnalyticsClient.js     POST bridge to TruBuddy Laravel analytics endpoint
     lib/
       dateRange.js                   validates start_date/end_date, converts IST -> UTC
   mcp/
@@ -38,13 +36,10 @@ src/
       getMetaAdsAnalytics.js         get_meta_ads_analytics tool (thin wrapper over the API)
 ```
 
-## Data sources (read-only, never written to)
+## Data source
 
-- **MySQL** (`utms`, `sessions`, `events`, `purchases`) — trubuddyweb's local marketing analytics
-  tables, joined by `session_id`. `DB_*` env vars point at the DB; every pooled connection
-  is put into `SET SESSION TRANSACTION READ ONLY` as a safety net.
-- **Product catalog** — read from this repo's local `src/api/data/allProducts.json` copy. Use
-  `PRODUCT_CATALOG_PATH` only if you need to override that path.
+- **TruBuddy Laravel endpoint** — `TRUBUDDY_ANALYTICS_URL`. Laravel reads production SQL and
+  returns the final JSON shape.
 
 ## 1. Install dependencies
 
@@ -60,9 +55,11 @@ npm install
 cp .env.example .env
 ```
 
-Fill in `DB_*` with real values (ask a teammate — never commit them).
-For local development, `DB_HOST=127.0.0.1` etc. point at a local Laragon MySQL instance
-that must be running (see trubuddyweb's own `.env` for the local dev DB name/credentials).
+Set:
+
+```
+TRUBUDDY_ANALYTICS_URL=https://trubuddy.me/meta-ads-mcp/analytics
+```
 
 ## 3. Run the API
 
@@ -126,7 +123,7 @@ Field sources:
 - `add_to_carts` = distinct `events.session_id` where `event_type = 'add_to_cart'`
 - `orders`/`total_revenue` = `purchases.order_id` and `purchases.total_amount`
 - `items` = parsed from `purchases.orderData.cartDetails`, with fallback to `purchases.cart`
-- `product_name` = product ID lookup in `src/api/data/allProducts.json`
+- `product_name` = resolved by the TruBuddy Laravel endpoint
 
 Missing/invalid dates, or `end_date` before `start_date`, return a `400` with a JSON error:
 
@@ -136,9 +133,10 @@ curl "http://localhost:3000/api/meta-ads/analytics?start_date=not-a-date&end_dat
 curl "http://localhost:3000/api/meta-ads/analytics?start_date=2026-09-15&end_date=2026-09-01"
 ```
 
-### A note on local testing
+### A note on testing
 
-The API reads the local SQL tables only. It does not query Athena or change Athena in any way.
+The API only calls the TruBuddy Laravel endpoint. It does not connect to MySQL directly, does not
+query Athena, and does not change Athena in any way.
 
 ## 4. Run the MCP server
 
@@ -179,7 +177,7 @@ With both the API and the MCP server running, and Claude Desktop configured as a
    `meta-ads-mcp` server.
 2. Ask Claude something like: "Get Meta ads analytics from 2026-09-09 to 2026-09-15."
 3. Claude calls `get_meta_ads_analytics` with `start_date` and `end_date`, which calls the local
-   API, which reads the local SQL marketing tables, and returns it for Claude to explain.
+   API, which calls the TruBuddy Laravel endpoint, and returns it for Claude to explain.
 
 You can also test the MCP server directly (without Claude Desktop) using the
 [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
@@ -187,13 +185,6 @@ You can also test the MCP server directly (without Claude Desktop) using the
 ```
 npx @modelcontextprotocol/inspector node src/mcp/server.js
 ```
-
-## Known issue in the upstream codebase (not this repo)
-
-`trubuddyweb` has Firebase/Google service-account private keys hardcoded directly in ~30 PHP files
-(not loaded from `.env`), including the one this project's `.env` reuses read-only. This should be
-rotated and centralized in `trubuddyweb` independent of this project — flagged here so it isn't
-lost.
 
 ## Phase 3 (not built yet)
 
