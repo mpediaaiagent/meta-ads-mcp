@@ -6,3 +6,7 @@ npm-debug.log*
 .DS_Store
 dist/
 coverage/
+
+# Not needed in this repo / not referenced by any code here.
+/Required Ad Campaign JSON Structure.json
+/src/api/data/
