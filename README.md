@@ -2,20 +2,15 @@
 
 A custom MCP server + API for Meta Ads analytics.
 
-**Architecture rule:** the API is the source of truth, the MCP is only a bridge, and Claude is only
-the conversation/explanation layer.
+**Architecture rule:** the API is the source of truth, the MCP is only a bridge, and Claude is only the conversation/explanation layer.
 
 ```
 Claude -> our MCP -> our API -> TruBuddy Laravel analytics endpoint -> production SQL -> API response -> MCP -> Claude
 ```
 
-This project does not include recommendations, Keep/Pause logic, Audience Catalog, budget/ad
-automation, attribution, or profit calculation (shipping/product cost/payment fees/refunds are not
-subtracted — revenue is gross order value). There is exactly one filter: date range.
+This project does not include recommendations, Keep/Pause logic, Audience Catalog, budget/ad automation, attribution, or profit calculation (shipping/product cost/payment fees/refunds are not subtracted — revenue is gross order value). There is exactly one filter: date range.
 
-This version is a thin Node/MCP bridge. The real analytics calculation lives in the TruBuddy
-Laravel app, because that app already has production SQL access. This repo does not read Athena and
-does not write to any TruBuddy table.
+This version is a thin Node/MCP bridge. The real analytics calculation lives in the TruBuddy Laravel app, because that app already has production SQL access. This repo does not read Athena and does not write to any TruBuddy table.
 
 ## Structure
 
@@ -38,8 +33,7 @@ src/
 
 ## Data source
 
-- **TruBuddy Laravel endpoint** — `TRUBUDDY_ANALYTICS_URL`. Laravel reads production SQL and
-  returns the final JSON shape.
+- **TruBuddy Laravel endpoint** — `TRUBUDDY_ANALYTICS_URL`. Laravel reads production SQL and returns the final JSON shape.
 
 ## 1. Install dependencies
 
@@ -135,25 +129,21 @@ curl "http://localhost:3000/api/meta-ads/analytics?start_date=2026-09-15&end_dat
 
 ### A note on testing
 
-The API only calls the TruBuddy Laravel endpoint. It does not connect to MySQL directly, does not
-query Athena, and does not change Athena in any way.
+The API only calls the TruBuddy Laravel endpoint. It does not connect to MySQL directly, does not query Athena, and does not change Athena in any way.
 
 ## 4. Run the MCP server
 
-The MCP server calls the local API, so keep the API running (step 3) in one terminal, then in
-another terminal:
+The MCP server calls the local API, so keep the API running (step 3) in one terminal, then in another terminal:
 
 ```
 npm run mcp
 ```
 
-The MCP server communicates over stdio, so it won't print anything when idle — it's waiting for an
-MCP client (like Claude Desktop) to connect.
+The MCP server communicates over stdio, so it won't print anything when idle — it's waiting for an MCP client (like Claude Desktop) to connect.
 
 ## 5. Configure Claude Desktop to use this MCP server
 
-Add an entry to your Claude Desktop config file
-(`%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+Add an entry to your Claude Desktop config file (`%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
@@ -166,26 +156,38 @@ Add an entry to your Claude Desktop config file
 }
 ```
 
-Restart Claude Desktop afterward. The API server must be running separately (step 3) for the tool
-to return data.
+Restart Claude Desktop afterward. The API server must be running separately (step 3) for the tool to return data.
 
 ## 6. Test the tool locally
 
 With both the API and the MCP server running, and Claude Desktop configured as above:
 
-1. Open Claude Desktop and confirm the `get_meta_ads_analytics` tool is listed for the
-   `meta-ads-mcp` server.
+1. Open Claude Desktop and confirm the `get_meta_ads_analytics` tool is listed for the `meta-ads-mcp` server.
 2. Ask Claude something like: "Get Meta ads analytics from 2026-09-09 to 2026-09-15."
-3. Claude calls `get_meta_ads_analytics` with `start_date` and `end_date`, which calls the local
-   API, which calls the TruBuddy Laravel endpoint, and returns it for Claude to explain.
+3. Claude calls `get_meta_ads_analytics` with `start_date` and `end_date`, which calls the local API, which calls the TruBuddy Laravel endpoint, and returns it for Claude to explain.
 
-You can also test the MCP server directly (without Claude Desktop) using the
-[MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
+You can also test the MCP server directly (without Claude Desktop) using the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
 
 ```
 npx @modelcontextprotocol/inspector node src/mcp/server.js
 ```
 
-## Phase 3 (not built yet)
+## 7. Remote MCP server (Streamable HTTP)
 
-Add Meta Marketing API calls for spend/impressions/clicks by campaign/adset/ad.
+`src/mcp/server.js` uses stdio, which only works for one local process on one machine — it's what Claude Desktop launches for you. To let this MCP server be added by anyone as a URL-based connector (Claude Code `--transport http`, a Claude.ai custom connector, MCP Inspector against a URL, etc.), there's a second entry point that speaks the MCP Streamable HTTP transport over Express instead:
+
+```
+npm run mcp:http
+```
+
+This starts a session-based Streamable HTTP server on `http://localhost:3001/mcp` (port from `MCP_HTTP_PORT`, defaults to 3001, separate from the analytics API's `PORT`). Both entry points share the exact same tool registration via `src/mcp/createServer.js`, so `get_meta_ads_analytics`behaves identically on both.
+
+Test it with the MCP Inspector against the URL instead of a local command:
+
+```
+npx @modelcontextprotocol/inspector
+```
+
+then connect to `http://localhost:3001/mcp` with transport type "Streamable HTTP".
+
+**This is local-only for now** — `MCP_HTTP_HOST` defaults to `127.0.0.1`, which keeps the SDK's built-in DNS-rebinding protection on and only accepts requests presenting a `localhost`/`127.0.0.1`Host header. It is not yet deployed anywhere with a public HTTPS URL, and there is no authentication in front of it — both are required before adding it as a real Claude.ai/Claude Code connector that other people can use.
